@@ -17,6 +17,7 @@ small{color:#685b49}.ship{display:inline-block;padding:5px;background:#e8dcc4;ma
 const names=['You (Yellow)','Blue','Green','Red','Purple'],colors=['#e5b83c','#5686ba','#4c956c','#c55b53','#926ca5'];
 const ports=['Liverpool','Le Havre','Hamburg','Antwerp','Rotterdam','Bremen'];
 let S=null,logs=[];
+const cubes=n=>'🟤'.repeat(Math.min(n,12))+(n>12?' +'+(n-12):'');
 function note(t){logs.unshift('Round '+S.round+': '+t);document.getElementById('log').textContent=logs.slice(0,70).join('\n')}
 function money(n){return '$'+n}
 function start(){
@@ -32,6 +33,106 @@ let out='<section><h2>Merchant Houses</h2><div class="grid">'+S.players.map((x,i
 out+='<section><h2>European Ports</h2><div class="grid">'+S.markets.map(m=>'<div><b>'+m.name+'</b> · '+money(m.price)+'/tonne</div>').join('')+'</div></section>';
 if(S.phase==='produce')out+='<section><h2>1. Extract Guano</h2><p>Choose how much to extract (maximum 4 tonnes per round). Extracted guano remains in Peru until purchased.</p><input id="extract" type="number" min="0" max="'+Math.min(4,p.reserve)+'" value="'+Math.min(3,p.reserve)+'"><button onclick="produce()">Extract and continue</button></section>';
 if(S.phase==='peru')out+='<section><h2>2. Peru Market</h2><p>Set a minimum selling price (Precio) and an offer to buy (Oferta). Buyers pay their own offer. Highest offer resolves against lowest ask. Equal values use turn order; later buyers resolve first.</p><label>Precio <input id="ask" type="number" min="1" max="25" value="7"></label><label>Oferta <input id="bid" type="number" min="1" max="25" value="10"></label><button onclick="peru()">Reveal and clear market</button></section>';
+if(S.phase==='marketResolve'){let m=S.market;out+='<section><h2>Peru Market — Live Resolution</h2><p>Resolve one purchasing opportunity at a time. Buyers are ordered highest offer first; sellers lowest asking price first. The buyer pays their own offer.</p><div class="grid"><div><h3>Available Island Guano · Precio</h3>'+m.asks.map(x=>'<div class="player" style="border-left:6px solid '+colors[x.i]+'"><b>'+S.players[x.i].name+'</b> · minimum '<section><h2>3. Departures</h2><p>Boats move one sea region each round. A boat in Peru can stay to load, or depart. Boats in Europe unload through the port market.</p>'+p.boats.map((b,i)=>'<p>Boat '+(i+1)+' ('+b.cargo+'/4) '+(b.zone===0?'<label><input type="checkbox" id="depart'+i+'" '+(b.cargo?'checked':'')+'> Depart Peru</label>':'Moves onward automatically')+'</p>').join('')+'<button onclick="sail()">Move boats</button></section>';
+if(S.phase==='europe')out+='<section><h2>4. Europe — Commitment and Bluff</h2><p>Assign your real delivery and optional bluff to different ports. If no human boat is in Europe, the bots resolve automatically.</p><label>Commitment <select id="real">'+options(S.markets.map(m=>m.name))+'</select></label><label>Bluff <select id="bluff"><option value="-1">No bluff</option>'+S.markets.map((m,i)=>'<option value="'+i+'">'+m.name+'</option>').join('')+'</select></label><button onclick="europe()">Reveal manifests</button></section>';
+if(S.phase==='end')out+='<section><h2>Game over</h2><p>Only one island still has guano in reserve. Highest cash wins.</p><h3>'+[...S.players].sort((a,b)=>b.cash-a.cash).map(x=>x.name+': '+money(x.cash)).join(' · ')+'</h3><button onclick="start()">Play again</button></section>';
+a.innerHTML=out;
+}
+function produce(){
+let p=S.players[0],v=Math.max(0,Math.min(4,p.reserve,Math.floor(+document.getElementById('extract').value||0)));p.reserve-=v;p.stock+=v;
+S.players.slice(1).forEach(q=>{let x=Math.min(q.reserve,q.stock>5?1:2+Math.floor(Math.random()*3));q.reserve-=x;q.stock+=x});
+note('Extraction: '+S.players.map(q=>q.name+' '+q.stock+' available').join(', '));S.phase='peru';render()}
+function peru(){
+let ask=Math.max(1,+document.getElementById('ask').value||1),bid=Math.max(1,+document.getElementById('bid').value||1);
+let asks=S.players.map((q,i)=>({i,price:i?6+Math.floor(Math.random()*7):ask,left:q.stock})).filter(x=>x.left>0).sort((a,b)=>a.price-b.price||a.i-b.i);
+let bids=[];S.players.forEach((q,i)=>q.boats.forEach((b,k)=>{if(b.zone===0&&b.cargo<4)bids.push({i,k,price:i?8+Math.floor(Math.random()*7):bid})}));
+bids.sort((a,b)=>b.price-a.price||b.i-a.i);
+S.market={asks,bids,cursor:0,history:[]};S.phase='marketResolve';note('Peru prices revealed. Market ready for step-by-step resolution.');render()
+}
+function marketNextText(){
+let m=S.market,b=m.bids[m.cursor];if(!b)return 'Market complete.';
+let s=m.asks.find(x=>x.left>0&&x.price<=b.price);
+if(!s)return S.players[b.i].name+' Boat '+(b.k+1)+' has no eligible seller at $'+b.price+'.';
+return S.players[b.i].name+' Boat '+(b.k+1)+' offers $'+b.price+'; cheapest eligible seller is '+S.players[s.i].name+' asking $'+s.price+'.'
+}
+function marketStep(){
+let m=S.market,b=m.bids[m.cursor];
+if(!b){S.phase='sail';render();return}
+let buyer=S.players[b.i],boat=buyer.boats[b.k],s=m.asks.find(x=>x.left>0&&x.price<=b.price);
+let qty=s?Math.min(s.left,4-boat.cargo,Math.floor(buyer.cash/b.price)):0;
+if(qty>0){let seller=S.players[s.i];buyer.cash-=qty*b.price;seller.cash+=qty*b.price;seller.stock-=qty;s.left-=qty;boat.cargo+=qty;
+let line=buyer.name+' Boat '+(b.k+1)+' buys '+qty+' tonnes from '+seller.name+' at $'+b.price+' = $'+qty*b.price+'.';m.history.unshift(line);note(line)}
+else m.history.unshift(buyer.name+' Boat '+(b.k+1)+' cannot purchase at $'+b.price+'.');
+m.cursor++;
+if(m.cursor>=m.bids.length){note('Peru market cleared.');S.phase='sail'}render()
+}
+function sail(){
+S.players.forEach((p,i)=>p.boats.forEach((b,k)=>{if(b.zone===0){let depart=i===0?document.getElementById('depart'+k).checked:b.cargo>=3;if(depart&&b.cargo)b.zone=1}else if(b.zone===1)b.zone=2;else if(b.zone===3)b.zone=0}));
+note('Ships advance. '+S.players.reduce((a,p)=>a+p.boats.filter(b=>b.zone===2).length,0)+' boats in Europe.');S.phase='europe';render()}
+function europe(){
+let real=+document.getElementById('real').value,bluff=+document.getElementById('bluff').value;
+if(real===bluff){alert('Commitment and bluff must be different ports.');return}
+let deliveries=[],bluffs=[];
+S.players.forEach((p,i)=>{let boats=p.boats.filter(b=>b.zone===2&&b.cargo>0);if(!boats.length)return;
+let dest=i===0?real:Math.floor(Math.random()*S.markets.length);
+boats.forEach(b=>deliveries.push({i,b,dest}));
+let fake=i===0?bluff:Math.random()<.8?Math.floor(Math.random()*S.markets.length):-1;
+if(fake>=0&&fake!==dest)bluffs.push({i,dest:fake})});
+note('Manifests: '+deliveries.map(d=>S.players[d.i].name+' → '+S.markets[d.dest].name).join('; ')+(bluffs.length?' | Bluffs: '+bluffs.map(d=>S.players[d.i].name+' → '+S.markets[d.dest].name).join('; '):''));
+S.markets.forEach((m,j)=>{let ds=deliveries.filter(d=>d.dest===j),total=ds.reduce((a,d)=>a+d.b.cargo,0);
+if(!ds.length){m.price=Math.min(25,m.price+1);return}
+let payout=Math.max(1,m.price-Math.max(0,ds.length-1)*3);
+ds.forEach(d=>{let gain=payout*d.b.cargo;S.players[d.i].cash+=gain;note(S.players[d.i].name+' delivers '+d.b.cargo+' to '+m.name+' for '+money(gain));d.b.cargo=0;d.b.zone=3});
+m.price=Math.max(3,Math.min(25,m.price+(total<=4?1:-2)))});
+let active=S.players.filter(p=>p.reserve>0);
+if(active.length<=1){S.phase='end';note('Guano age ends: '+active.length+' island(s) retain reserves.')}
+else{S.round++;S.phase='produce'}render()}
+start();
+</script></html>+x.price+' / tonne<br>'+cubes(x.left)+' <b>'+x.left+' tonnes</b></div>').join('')+'</div><div><h3>Fleet Offers · Oferta</h3>'+m.bids.map((x,i)=>'<div class="player" style="border-left:6px solid '+colors[x.i]+';'+(i===m.cursor?'background:#f8e1a4':'')+'"><b>'+S.players[x.i].name+' Boat '+(x.k+1)+'</b> · offer '<section><h2>3. Departures</h2><p>Boats move one sea region each round. A boat in Peru can stay to load, or depart. Boats in Europe unload through the port market.</p>'+p.boats.map((b,i)=>'<p>Boat '+(i+1)+' ('+b.cargo+'/4) '+(b.zone===0?'<label><input type="checkbox" id="depart'+i+'" '+(b.cargo?'checked':'')+'> Depart Peru</label>':'Moves onward automatically')+'</p>').join('')+'<button onclick="sail()">Move boats</button></section>';
+if(S.phase==='europe')out+='<section><h2>4. Europe — Commitment and Bluff</h2><p>Assign your real delivery and optional bluff to different ports. If no human boat is in Europe, the bots resolve automatically.</p><label>Commitment <select id="real">'+options(S.markets.map(m=>m.name))+'</select></label><label>Bluff <select id="bluff"><option value="-1">No bluff</option>'+S.markets.map((m,i)=>'<option value="'+i+'">'+m.name+'</option>').join('')+'</select></label><button onclick="europe()">Reveal manifests</button></section>';
+if(S.phase==='end')out+='<section><h2>Game over</h2><p>Only one island still has guano in reserve. Highest cash wins.</p><h3>'+[...S.players].sort((a,b)=>b.cash-a.cash).map(x=>x.name+': '+money(x.cash)).join(' · ')+'</h3><button onclick="start()">Play again</button></section>';
+a.innerHTML=out;
+}
+function produce(){
+let p=S.players[0],v=Math.max(0,Math.min(4,p.reserve,Math.floor(+document.getElementById('extract').value||0)));p.reserve-=v;p.stock+=v;
+S.players.slice(1).forEach(q=>{let x=Math.min(q.reserve,q.stock>5?1:2+Math.floor(Math.random()*3));q.reserve-=x;q.stock+=x});
+note('Extraction: '+S.players.map(q=>q.name+' '+q.stock+' available').join(', '));S.phase='peru';render()}
+function peru(){
+let p=S.players[0],ask=Math.max(1,+document.getElementById('ask').value||1),bid=Math.max(1,+document.getElementById('bid').value||1);
+let asks=S.players.map((q,i)=>({i,price:i?6+Math.floor(Math.random()*7):ask,left:q.stock})).filter(x=>x.left>0).sort((a,b)=>a.price-b.price||a.i-b.i);
+let bids=[];
+S.players.forEach((q,i)=>q.boats.forEach((b,k)=>{if(b.zone===0&&b.cargo<4)bids.push({i,k,price:i?8+Math.floor(Math.random()*7):bid})}));
+bids.sort((a,b)=>b.price-a.price||b.i-a.i);
+for(let b of bids){let buyer=S.players[b.i],boat=buyer.boats[b.k];for(let seller of asks){
+if(seller.price>b.price||boat.cargo>=4)break;
+let owner=S.players[seller.i],qty=Math.min(seller.left,4-boat.cargo,Math.floor(buyer.cash/b.price));
+if(qty<=0)continue;buyer.cash-=qty*b.price;owner.cash+=qty*b.price;owner.stock-=qty;seller.left-=qty;boat.cargo+=qty;
+note(buyer.name+' buys '+qty+' tonnes from '+owner.name+' at '+money(b.price)+'/tonne');
+}}
+S.phase='sail';render()}
+function sail(){
+S.players.forEach((p,i)=>p.boats.forEach((b,k)=>{if(b.zone===0){let depart=i===0?document.getElementById('depart'+k).checked:b.cargo>=3;if(depart&&b.cargo)b.zone=1}else if(b.zone===1)b.zone=2;else if(b.zone===3)b.zone=0}));
+note('Ships advance. '+S.players.reduce((a,p)=>a+p.boats.filter(b=>b.zone===2).length,0)+' boats in Europe.');S.phase='europe';render()}
+function europe(){
+let real=+document.getElementById('real').value,bluff=+document.getElementById('bluff').value;
+if(real===bluff){alert('Commitment and bluff must be different ports.');return}
+let deliveries=[],bluffs=[];
+S.players.forEach((p,i)=>{let boats=p.boats.filter(b=>b.zone===2&&b.cargo>0);if(!boats.length)return;
+let dest=i===0?real:Math.floor(Math.random()*S.markets.length);
+boats.forEach(b=>deliveries.push({i,b,dest}));
+let fake=i===0?bluff:Math.random()<.8?Math.floor(Math.random()*S.markets.length):-1;
+if(fake>=0&&fake!==dest)bluffs.push({i,dest:fake})});
+note('Manifests: '+deliveries.map(d=>S.players[d.i].name+' → '+S.markets[d.dest].name).join('; ')+(bluffs.length?' | Bluffs: '+bluffs.map(d=>S.players[d.i].name+' → '+S.markets[d.dest].name).join('; '):''));
+S.markets.forEach((m,j)=>{let ds=deliveries.filter(d=>d.dest===j),total=ds.reduce((a,d)=>a+d.b.cargo,0);
+if(!ds.length){m.price=Math.min(25,m.price+1);return}
+let payout=Math.max(1,m.price-Math.max(0,ds.length-1)*3);
+ds.forEach(d=>{let gain=payout*d.b.cargo;S.players[d.i].cash+=gain;note(S.players[d.i].name+' delivers '+d.b.cargo+' to '+m.name+' for '+money(gain));d.b.cargo=0;d.b.zone=3});
+m.price=Math.max(3,Math.min(25,m.price+(total<=4?1:-2)))});
+let active=S.players.filter(p=>p.reserve>0);
+if(active.length<=1){S.phase='end';note('Guano age ends: '+active.length+' island(s) retain reserves.')}
+else{S.round++;S.phase='produce'}render()}
+start();
+</script></html>+x.price+' / tonne<br>Loaded '+S.players[x.i].boats[x.k].cargo+'/4 tonnes'+(i===m.cursor?' · <b>NEXT</b>':'')+'</div>').join('')+'</div></div><p><b>Next action:</b> '+marketNextText()+'</p><button onclick="marketStep()">Resolve next offer</button><button onclick="while(S.phase===\'marketResolve\')marketStep()">Resolve all</button><h3>Transactions</h3><div>'+m.history.map(x=>'<p>'+x+'</p>').join('')+'</div></section>'}
 if(S.phase==='sail')out+='<section><h2>3. Departures</h2><p>Boats move one sea region each round. A boat in Peru can stay to load, or depart. Boats in Europe unload through the port market.</p>'+p.boats.map((b,i)=>'<p>Boat '+(i+1)+' ('+b.cargo+'/4) '+(b.zone===0?'<label><input type="checkbox" id="depart'+i+'" '+(b.cargo?'checked':'')+'> Depart Peru</label>':'Moves onward automatically')+'</p>').join('')+'<button onclick="sail()">Move boats</button></section>';
 if(S.phase==='europe')out+='<section><h2>4. Europe — Commitment and Bluff</h2><p>Assign your real delivery and optional bluff to different ports. If no human boat is in Europe, the bots resolve automatically.</p><label>Commitment <select id="real">'+options(S.markets.map(m=>m.name))+'</select></label><label>Bluff <select id="bluff"><option value="-1">No bluff</option>'+S.markets.map((m,i)=>'<option value="'+i+'">'+m.name+'</option>').join('')+'</select></label><button onclick="europe()">Reveal manifests</button></section>';
 if(S.phase==='end')out+='<section><h2>Game over</h2><p>Only one island still has guano in reserve. Highest cash wins.</p><h3>'+[...S.players].sort((a,b)=>b.cash-a.cash).map(x=>x.name+': '+money(x.cash)).join(' · ')+'</h3><button onclick="start()">Play again</button></section>';
