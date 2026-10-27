@@ -81,7 +81,7 @@ let ask=Math.max(1,+document.getElementById('ask').value||1),bid=Math.max(1,+doc
 let asks=S.players.map((q,i)=>({i,price:i?botAsk(q):ask,left:q.stock})).filter(x=>x.left>0).sort((a,b)=>a.price-b.price||a.i-b.i);
 let bids=[];S.players.forEach((q,i)=>q.boats.forEach((b,k)=>{if(b.zone===0&&b.cargo<4)bids.push({i,k,price:i?botBid(q):bid})}));
 bids.sort((a,b)=>b.price-a.price||b.i-a.i);
-S.market={asks,bids,cursor:0,history:[]};S.phase='marketResolve';note('Peru offers revealed: '+asks.map(x=>S.players[x.i].name+' asks 
+S.market={asks,bids,cursor:0,history:[]};S.phase='marketResolve';note('Peru offers revealed: '+asks.map(x=>S.players[x.i].name+' asks $'+x.price).join('; '));render()
 }
 function marketNextText(){
 let m=S.market,b=m.bids[m.cursor];if(!b)return 'Market complete.';
