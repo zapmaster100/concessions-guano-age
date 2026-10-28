@@ -8,9 +8,10 @@ button{cursor:pointer;background:#d9c29a}button:disabled{opacity:.45}section{bac
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}.player{padding:12px;border:2px solid #b6a17e;background:#fffdf6}
 small{color:#685b49}.ship{display:inline-block;padding:5px;background:#e8dcc4;margin:3px;border-radius:4px}
 .route-board{display:grid;grid-template-columns:1fr 1fr;gap:9px;background:#b7c9c4;padding:10px;border:4px double #75634a;border-radius:9px}.region{background:#f5edda;border:2px solid #b8a17b;border-radius:8px;min-height:112px;padding:10px}.region h3{margin:0 0 7px}.vessel{display:inline-block;background:#fffaf0;border:2px solid;border-radius:8px;padding:6px;margin:3px;font-size:13px}.port-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}.port{border:2px solid #c5af88;border-radius:7px;padding:10px;background:#f8f0df}.marker{display:inline-block;border:2px solid;border-radius:18px;padding:5px 8px;margin:3px;background:#fff9e7;font-weight:bold}.turnbox{background:#e9d5a7;padding:10px;border-radius:6px;margin:10px 0}#log{max-height:240px;overflow:auto;white-space:pre-line;background:#f4ead6;padding:12px} .tag{font-weight:bold}
+.manifest-card{border-top-width:5px}.manifest-card p{margin:8px 0}.manifest-card .payout{font-size:18px;background:#e5efdf;padding:9px;border-radius:5px}.manifest-card .held{background:#f2e1c7}.manifest-token{display:inline-block;padding:3px 7px;border-radius:4px;font-weight:bold;background:#e7f0df}.manifest-token.bluff{background:#f4d9bc}.euro-totals{background:#eee0bd;padding:10px;border-radius:6px;margin:12px 0}
 </style>
 <h1>Concessions <small>— The Guano Age</small></h1>
-<p><strong>Version 0.2.0 · Build 014</strong> · 1 human vs 2–4 bots · 1 concession and 2 boats each · no upkeep · finite reserves.</p>
+<p><strong>Version 0.2.0 · Build 015</strong> · 1 human vs 2–4 bots · 1 concession and 2 boats each · no upkeep · finite reserves.</p>
 <section><label>Players <select id="count"><option>3</option><option>4</option><option>5</option></select></label><button onclick="start()">New game</button><span id="status"></span></section>
 <div id="app"></div><section><h2>Log</h2><div id="log"></div></section>
 <script>
@@ -41,7 +42,19 @@ let i=turn.i,k=turn.k,placed=e.tokens.filter(t=>t.i===i&&t.k===k);
 let allowed=S.markets.map((m,j)=>({m,j})).filter(x=>!placed.some(t=>t.dest===x.j));
 let typeOptions=placed.length?(placed[0].type==='real'?'<option value="bluff">Bluff</option>':'<option value="real">Commitment</option>'):'<option value="real">Commitment</option><option value="bluff">Bluff</option>';
 return '<section><h2>4. Europe — Ship Manifests</h2><p>Each loaded boat has its own commitment and optional bluff. Each circuit goes clockwise, one marker per boat. All markers remain face down until reveal.</p><div class="turnbox"><b>Pass '+e.pass+' of 2</b> · '+S.players[i].name+' · Boat '+(k+1)+' ('+S.players[i].boats[k].cargo+' tonnes)'+(e.pass===2?' · optional':'')+'</div><p>Face-down markers placed: '+e.tokens.length+'</p>'+
-(i===0?'<label>Port <select id="portChoice">'+allowed.map(x=>'<option value="'+x.j+'">'+x.m.name+' · $'+x.m.price+'</option>').join('')+'</select></label><label>Marker <select id="markerChoice">'+typeOptions+'</select></label><button onclick="euroHuman()">Place face down</button>'+(e.pass===2?'<button onclick="euroPass()">Pass</button>':''):'<button onclick="advanceEurope()">Continue</button>')+'</section>'
+ (i===0?'<label>Port <select id="portChoice">'+allowed.map(x=>'<option value="'+x.j+'">'+x.m.name+' · $'+x.m.price+'</option>').join('')+'</select></label><label>Marker <select id="markerChoice">'+typeOptions+'</select></label><button onclick="euroHuman()">Place face down</button>'+(e.pass===2&&placed.some(t=>t.type==='real')?'<button onclick="euroPass()">Pass</button>':''):'<button onclick="advanceEurope()">Continue</button>')+'</section>'
+}
+function europeResultsHTML(){
+ let report=S.euroReport;if(!report)return '';
+ let totals=S.players.map((p,i)=>({name:p.name,income:report.boats.filter(b=>b.i===i).reduce((sum,b)=>sum+b.income,0)}));
+ let clearings=report.ports.map(m=>'<div class="port"><b>'+S.markets[m.dest].name+'</b><p>'+m.total+' tonnes unloaded</p><small>Listed $'+m.listed+' → clearing $'+m.payout+'/tonne</small></div>').join('');
+ let cards=report.boats.map(b=>{
+ let destination=b.commit===null?'No commitment':S.markets[b.commit].name;
+ let bluff=b.bluff===null?'None':S.markets[b.bluff].name;
+ let outcome=b.commit===null?'<p class="payout held"><b>No sale</b> · '+b.cargo+' tonnes remain aboard in Europe.</p>':'<p class="payout">Sold <b>'+b.cargo+' tonnes</b> × $'+b.price+'/tonne = <b>$'+b.income+'</b></p>';
+ return '<div class="player manifest-card" style="border-top-color:'+colors[b.i]+'"><b>'+S.players[b.i].name+' · Boat '+(b.k+1)+'</b><p>Cargo arriving: <b>'+b.cargo+'/4 tonnes</b></p><p><span class="manifest-token">COMMIT</span> '+destination+'</p><p><span class="manifest-token bluff">BLUFF</span> '+bluff+'</p>'+outcome+'</div>';
+ }).join('');
+ return '<section><h2>Europe — Round '+report.round+' Results</h2><p>All face-down markers are revealed. Each boat shows its actual commitment, its bluff (if any), and the money earned at the shared port clearing price.</p><div class="euro-totals"><b>European sale revenue:</b> '+totals.map(t=>t.name+' <b>$'+t.income+'</b>').join(' · ')+'</div>'+(clearings?'<h3>Port clearing prices</h3><div class="port-grid">'+clearings+'</div>':'')+'<h3>Boat-by-boat manifests</h3><div class="grid">'+cards+'</div>'+(S.phase==='euroResults'?'<p><button onclick="finishRound()">Continue to next round</button></p>':'')+'</section>';
 }
 
 function render(){
@@ -57,6 +70,7 @@ out+='<section><h2>Peru Market — Live Resolution</h2><p>Cheapest sellers on th
 if(S.phase==='finalSail')out+='<section><h2>Final Voyage · Movement '+(3-S.finalMoves)+' of 2</h2><p>The docks are closed. Loaded boats in Peru depart automatically; boats at sea advance toward Europe. After this movement, the European market opens.</p><button onclick="sail()">Advance final voyage</button></section>';
 if(S.phase==='sail')out+='<section><h2>3. Departures</h2><p>'+(S.docksClosed?'Docks closed: every loaded boat departs automatically for its final voyage.':'Boats move one sea region each round. A boat in Peru can stay to load, or depart. Boats in Europe unload through the port market.')+'</p>'+(S.docksClosed?'':p.boats.map((b,i)=>'<p>Boat '+(i+1)+' ('+b.cargo+'/4) '+(b.zone===0?'<label><input type="checkbox" id="depart'+i+'" '+(b.cargo?'checked':'')+'> Depart Peru</label>':'Moves onward automatically')+'</p>').join(''))+'<button onclick="sail()">Move boats</button></section>';
 if(S.phase==='europe')out+=euroUI();
+ if(S.phase==='euroResults'||S.phase==='end'&&S.euroReport)out+=europeResultsHTML();
 if(S.exhausted)out+='<section><b>Reserves exhausted.</b> '+(S.docksClosed?'Island docks closed. '+S.finalMoves+' final ship movement(s) remaining.':'No more extraction. Existing dock stock can still be traded until a Peru market has no sales.')+'</section>';
 if(S.phase==='end')out+='<section><h2>Game over</h2><p>The docks are closed and the final European sales have resolved. Highest cash wins.</p><h3>'+[...S.players].sort((a,b)=>b.cash-a.cash).map(x=>x.name+': '+money(x.cash)).join(' · ')+'</h3><button onclick="start()">Play again</button></section>';
 a.innerHTML=out;
@@ -149,7 +163,8 @@ S.phase='sail';render()
 }
 function marketAll(){while(S.phase==='marketResolve')marketStep()}
 function initEurope(){
-let turns=clockwise().flatMap(i=>S.players[i].boats.map((b,k)=>b.zone===2&&b.cargo>0?{i,k}:null).filter(Boolean));
+// Each player places only one marker before the next player, even with two loaded boats.
+let turns=[];for(let k=0;k<2;k++)clockwise().forEach(i=>{let b=S.players[i].boats[k];if(b&&b.zone===2&&b.cargo>0)turns.push({i,k})});
 if(!turns.length){note('No ships in European ports.');finishRound();return}
 S.euro={turns,cursor:0,pass:1,tokens:[]};S.phase='europe';advanceEurope()
 }
@@ -160,7 +175,7 @@ let turn=e.turns[e.cursor];if(turn.i!==0){botPlace(turn.i,turn.k);return}render(
 }
 function botPlace(i,k){
 let e=S.euro,existing=e.tokens.filter(t=>t.i===i&&t.k===k);
-if(e.pass===2&&Math.random()<.22){e.cursor++;advanceEurope();return}
+if(e.pass===2&&existing.some(t=>t.type==='real')&&Math.random()<.22){e.cursor++;advanceEurope();return}
 let available=S.markets.map((m,j)=>j).filter(j=>!existing.some(t=>t.dest===j));
 let sorted=available.sort((a,b)=>{
 let cargo=S.players[i].boats[k].cargo;
@@ -177,7 +192,7 @@ if(e.tokens.some(t=>t.i===turn.i&&t.k===turn.k&&t.dest===dest)){alert('This boat
 e.tokens.push({i:turn.i,k:turn.k,dest,type});note('Yellow Boat '+(turn.k+1)+' places a face-down marker at '+S.markets[dest].name);
 e.cursor++;advanceEurope()
 }
-function euroPass(){if(S.euro.pass!==2)return;let t=S.euro.turns[S.euro.cursor];note('Yellow Boat '+(t.k+1)+' passes on second marker.');S.euro.cursor++;advanceEurope()}
+function euroPass(){if(S.euro.pass!==2)return;let t=S.euro.turns[S.euro.cursor];if(!S.euro.tokens.some(x=>x.i===t.i&&x.k===t.k&&x.type==='real'))return;note('Yellow Boat '+(t.k+1)+' passes on second marker.');S.euro.cursor++;advanceEurope()}
 function fillPort(m,tonnes){
 let filled=m.fill+tonnes;
 m.price=Math.max(1,m.price-Math.floor(filled/2));
@@ -187,20 +202,24 @@ return m.price;
 function resolveEurope(){
 let e=S.euro,deliveries=[];
 note('Manifests revealed: '+e.tokens.map(t=>S.players[t.i].name+' Boat '+(t.k+1)+' '+(t.type==='real'?'COMMITMENT':'BLUFF')+' at '+S.markets[t.dest].name).join('; '));
-e.turns.forEach(t=>{
+let boats=e.turns.map(t=>{
 let real=e.tokens.find(x=>x.i===t.i&&x.k===t.k&&x.type==='real');
+ let bluff=e.tokens.find(x=>x.i===t.i&&x.k===t.k&&x.type==='bluff');
 let boat=S.players[t.i].boats[t.k];
-if(!real){note(S.players[t.i].name+' Boat '+(t.k+1)+' placed only a bluff; cargo waits in Europe.');return}
-deliveries.push({i:t.i,b:boat,dest:real.dest})
+ let result={i:t.i,k:t.k,cargo:boat.cargo,commit:real?real.dest:null,bluff:bluff?bluff.dest:null,price:0,income:0};
+ if(!real){note(S.players[t.i].name+' Boat '+(t.k+1)+' placed only a bluff; cargo waits in Europe.');return result}
+ deliveries.push({i:t.i,b:boat,dest:real.dest,result});return result;
 });
+let portResults=[];
 S.markets.forEach((m,j)=>{
 let ds=deliveries.filter(d=>d.dest===j),total=ds.reduce((sum,d)=>sum+d.b.cargo,0);
 if(!ds.length)return;
 let listed=m.price,previousFill=m.fill,payout=fillPort(m,total);
+ portResults.push({dest:j,listed,previousFill,total,payout});
 note(m.name+': listed $'+listed+', '+total+' tonnes unloaded into two-tonne price levels ('+previousFill+' previously filled) = $'+payout+' per tonne.');
-ds.forEach(d=>{let gain=payout*d.b.cargo;S.players[d.i].cash+=gain;note(S.players[d.i].name+' sells '+d.b.cargo+' tonnes at '+m.name+' for $'+gain+' ($'+payout+'/tonne)');d.b.cargo=0;d.b.zone=3});
+ ds.forEach(d=>{let gain=payout*d.b.cargo;d.result.price=payout;d.result.income=gain;S.players[d.i].cash+=gain;note(S.players[d.i].name+' Boat '+(d.result.k+1)+' sells '+d.b.cargo+' tonnes at '+m.name+' for $'+gain+' ($'+payout+'/tonne)'+(d.result.bluff!==null?'; bluffed at '+S.markets[d.result.bluff].name:''));d.b.cargo=0;d.b.zone=3});
 });
-S.euro=null;finishRound()
+ S.euroReport={round:S.round,boats,ports:portResults};S.euro=null;S.phase='euroResults';render()
 }
 function finishRound(){
 S.firstPlayer=(S.firstPlayer+1)%S.players.length;
