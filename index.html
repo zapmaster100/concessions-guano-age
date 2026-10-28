@@ -10,7 +10,7 @@ small{color:#685b49}.ship{display:inline-block;padding:5px;background:#e8dcc4;ma
 .route-board{display:grid;grid-template-columns:1fr 1fr;gap:9px;background:#b7c9c4;padding:10px;border:4px double #75634a;border-radius:9px}.region{background:#f5edda;border:2px solid #b8a17b;border-radius:8px;min-height:112px;padding:10px}.region h3{margin:0 0 7px}.vessel{display:inline-block;background:#fffaf0;border:2px solid;border-radius:8px;padding:6px;margin:3px;font-size:13px}.port-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}.port{border:2px solid #c5af88;border-radius:7px;padding:10px;background:#f8f0df}.marker{display:inline-block;border:2px solid;border-radius:18px;padding:5px 8px;margin:3px;background:#fff9e7;font-weight:bold}.turnbox{background:#e9d5a7;padding:10px;border-radius:6px;margin:10px 0}#log{max-height:240px;overflow:auto;white-space:pre-line;background:#f4ead6;padding:12px} .tag{font-weight:bold}
 </style>
 <h1>Concessions <small>— The Guano Age</small></h1>
-<p><strong>Version 0.2.0 · Build 011</strong> · 1 human vs 2–4 bots · 1 concession and 2 boats each · no upkeep · finite reserves.</p>
+<p><strong>Version 0.2.0 · Build 012</strong> · 1 human vs 2–4 bots · 1 concession and 2 boats each · no upkeep · finite reserves.</p>
 <section><label>Players <select id="count"><option>3</option><option>4</option><option>5</option></select></label><button onclick="start()">New game</button><span id="status"></span></section>
 <div id="app"></div><section><h2>Log</h2><div id="log"></div></section>
 <script>
@@ -76,26 +76,32 @@ let pressure=Math.max(-2,Math.min(2,volumePressure*.75+competitionPressure*.25))
 // A high reserve price is worthless when the boats can't afford even a typical load.
 let budgets=openBoats.map(b=>Math.floor(b.cash/Math.min(4,b.free))).sort((a,b)=>a-b);
 let typicalBudget=budgets.length?budgets[Math.floor((budgets.length-1)/2)]:0;
-return {supply,sellers,capacity,buyers,pressure,typicalBudget};
+let bestEuropean=Math.max(...S.markets.map(m=>m.price));
+// Europe pays its listed price LESS the tonnes unloaded. Assume one boat fills as far as dock stock allows.
+let existingCargo=Math.max(0,...openBoats.map(b=>4-b.free));
+let expectedDelivery=Math.min(4,Math.max(1,supply+existingCargo));
+let maxPurchasePrice=Math.max(1,bestEuropean-expectedDelivery-1); // Aim for $1 profit; all offers have a $1 floor.
+return {supply,sellers,capacity,buyers,pressure,typicalBudget,bestEuropean,expectedDelivery,maxPurchasePrice};
 }
 function botAsk(q,c){
-if(c.buyers===0)return 9;
+if(c.buyers===0)return Math.min(9,c.maxPurchasePrice);
 let urgency=(q.cash<12?2:q.cash<25?1:0)+(q.stock>=7?2:q.stock>=4?1:0);
 let price=11-Math.round(c.pressure*3)-urgency;
 // Sellers with more stock than their likely share of the boats undercut more sharply in a glut.
 if(c.pressure>.35&&c.sellers>c.buyers&&q.stock>c.capacity/c.sellers)price--;
 if(q.stock<=2&&q.cash>=30)price+=2;
-price=Math.min(price,Math.max(1,c.typicalBudget));
+// Even a rich buyer will not sensibly pay more than the projected European resale profit allows.
+let competitiveCeiling=Math.max(1,c.maxPurchasePrice-Math.max(0,Math.round(c.pressure*3)));
+price=Math.min(price,Math.max(1,c.typicalBudget),competitiveCeiling);
 return Math.max(1,Math.min(25,price));
 }
 function botBid(q,c){
 let free=q.boats.reduce((n,b)=>n+(b.zone===0?4-b.cargo:0),0);
 if(free===0||q.cash<1)return 1;
-let bestEuropean=Math.max(...S.markets.map(m=>m.price));
 let affordable=Math.max(1,Math.floor(q.cash/Math.min(4,free)));
 // Abundant dock stock lets buyers bid less; scarce stock makes them compete, subject to cash and resale margins.
-let target=Math.min(12,Math.max(2,bestEuropean-5))-Math.round(c.pressure*4);
-return Math.max(1,Math.min(25,bestEuropean-3,affordable,target));
+let target=Math.min(12,c.maxPurchasePrice)-Math.round(c.pressure*4);
+return Math.max(1,Math.min(25,c.maxPurchasePrice,affordable,target));
 }
 function peru(){
 let ask=Math.max(1,+document.getElementById('ask').value||1),bid=Math.max(1,+document.getElementById('bid').value||1);

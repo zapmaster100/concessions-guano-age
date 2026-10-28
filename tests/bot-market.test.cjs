@@ -72,6 +72,33 @@ test('initial cash limits seller asks to affordable buyer offers', () => {
   assert.equal(g.eval('botBid(S.players[1], marketConditions())'), 5);
 });
 
+test('low European prices cap seller asks and buyer bids below the listed port price', () => {
+  const g = game();
+  glut(g);
+  g.state.markets.forEach(m => { m.price = 7; });
+  const c = g.eval('marketConditions()');
+  assert.equal(c.bestEuropean, 7);
+  assert.equal(c.expectedDelivery, 4);
+  assert.equal(c.maxPurchasePrice, 2); // $7 listed - 4 tonnes unloaded - $1 target margin.
+  const asks = [1, 2, 3, 4].map(i => g.eval(`botAsk(S.players[${i}], marketConditions())`));
+  const offer = g.eval('botBid(S.players[3], marketConditions())');
+  assert.ok(asks.every(p => p <= 2));
+  assert.ok(offer <= 2);
+  assert.ok(asks.some(p => p <= offer), 'bots should still be able to trade during a glut');
+});
+
+test('a one-tonne shipment allows a higher European resale-based offer', () => {
+  const g = game();
+  g.state.players.forEach(p => { p.stock = 0; p.cash = 80; });
+  g.state.players[4].stock = 1;
+  g.state.markets.forEach(m => { m.price = 7; });
+  const c = g.eval('marketConditions()');
+  assert.equal(c.expectedDelivery, 1);
+  assert.equal(c.maxPurchasePrice, 5);
+  assert.equal(g.eval('botAsk(S.players[4], marketConditions())'), 5);
+  assert.equal(g.eval('botBid(S.players[3], marketConditions())'), 5);
+});
+
 test('sale still pays the buyer offer, never the seller minimum or midpoint', () => {
   const g = game();
   const seller = g.state.players[0], buyer = g.state.players[1];
