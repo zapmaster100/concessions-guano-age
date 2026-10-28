@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Concessions: The Guano Age — v0.1.8</title>
+<title>Concessions: The Guano Age — v0.1.9</title>
 <style>
 body{font:15px Georgia,serif;background:#eee4ce;color:#32291e;max-width:1150px;margin:auto;padding:22px}
 h1,h2{color:#583b22}button,select,input{font:inherit;padding:7px;margin:3px;border:1px solid #947b58;border-radius:4px;background:#fffaf0}
@@ -10,7 +10,7 @@ small{color:#685b49}.ship{display:inline-block;padding:5px;background:#e8dcc4;ma
 .route-board{display:grid;grid-template-columns:1fr 1fr;gap:9px;background:#b7c9c4;padding:10px;border:4px double #75634a;border-radius:9px}.region{background:#f5edda;border:2px solid #b8a17b;border-radius:8px;min-height:112px;padding:10px}.region h3{margin:0 0 7px}.vessel{display:inline-block;background:#fffaf0;border:2px solid;border-radius:8px;padding:6px;margin:3px;font-size:13px}.port-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}.port{border:2px solid #c5af88;border-radius:7px;padding:10px;background:#f8f0df}.marker{display:inline-block;border:2px solid;border-radius:18px;padding:5px 8px;margin:3px;background:#fff9e7;font-weight:bold}.turnbox{background:#e9d5a7;padding:10px;border-radius:6px;margin:10px 0}#log{max-height:240px;overflow:auto;white-space:pre-line;background:#f4ead6;padding:12px} .tag{font-weight:bold}
 </style>
 <h1>Concessions <small>— The Guano Age</small></h1>
-<p><strong>Version 0.1.8 · Build 008</strong> · 1 human vs 2–4 bots · 1 concession and 2 boats each · no upkeep · finite reserves.</p>
+<p><strong>Version 0.1.9 · Build 009</strong> · 1 human vs 2–4 bots · 1 concession and 2 boats each · no upkeep · finite reserves.</p>
 <section><label>Players <select id="count"><option>3</option><option>4</option><option>5</option></select></label><button onclick="start()">New game</button><span id="status"></span></section>
 <div id="app"></div><section><h2>Log</h2><div id="log"></div></section>
 <script>
@@ -21,7 +21,7 @@ function note(t){logs.unshift('Round '+S.round+': '+t);document.getElementById('
 function money(n){return '$'+n}
 function start(){
 const n=+document.getElementById('count').value;logs=[];
-S={round:1,firstPlayer:0,phase:'produce',players:Array.from({length:n},(_,i)=>({name:names[i],cash:20,reserve:24,stock:0,boats:[{zone:0,cargo:0},{zone:0,cargo:0}]})),markets:ports.slice(0,n+1).map((name,i)=>({name,price:9+i*2})),offers:[],asks:[]};
+S={round:1,firstPlayer:0,finalMoves:0,phase:'produce',players:Array.from({length:n},(_,i)=>({name:names[i],cash:20,reserve:24,stock:0,boats:[{zone:0,cargo:0},{zone:0,cargo:0}]})),markets:ports.slice(0,n+1).map((name,i)=>({name,price:9+i*2})),offers:[],asks:[]};
 note('Game begins. Each island has 24 tonnes. Ships hold 4 tonnes.');render()}
 function priority(i){return (i-S.firstPlayer+S.players.length)%S.players.length}
 function clockwise(){return S.players.map((_,j)=>(S.firstPlayer+j)%S.players.length)}
@@ -52,8 +52,10 @@ if(S.phase==='produce')out+='<section><h2>1. Extract Guano</h2><p>Choose how muc
 if(S.phase==='peru')out+='<section><h2>2. Peru Market</h2><p>Set a minimum selling price (Precio) and an offer to buy (Oferta). Buyers pay their own offer. Highest offer resolves against lowest ask. Equal values use turn order; later buyers resolve first.</p><label>Precio <input id="ask" type="number" min="1" max="25" value="7"></label><label>Oferta <input id="bid" type="number" min="1" max="25" value="10"></label><button onclick="peru()">Reveal and clear market</button></section>';
 if(S.phase==='marketResolve'){let m=S.market;
 out+='<section><h2>Peru Market — Live Resolution</h2><p>Cheapest sellers on the left; highest buying offers first on the right. Buyers pay their offered price.</p><div class="grid"><div><h3>Islands · Precio</h3>'+m.asks.map(x=>'<div class="player" style="border-left:6px solid '+colors[x.i]+'"><b>'+S.players[x.i].name+'</b> · minimum $'+x.price+' / tonne<br>'+cubes(x.left)+' <b>'+x.left+' tonnes</b></div>').join('')+'</div><div><h3>Ships · Oferta</h3>'+m.bids.map((x,i)=>'<div class="player" style="border-left:6px solid '+colors[x.i]+';'+(i===m.cursor?'background:#f8e1a4':'')+'"><b>'+S.players[x.i].name+' Boat '+(x.k+1)+'</b> · offer $'+x.price+' / tonne<br>Loaded '+S.players[x.i].boats[x.k].cargo+'/4 tonnes'+(i===m.cursor?' · <b>NEXT</b>':'')+'</div>').join('')+'</div></div><p><b>Next:</b> '+marketNextText()+'</p><button onclick="marketStep()">Resolve next offer</button><button onclick="marketAll()">Resolve all</button><h3>Transactions</h3>'+m.history.map(x=>'<p>'+x+'</p>').join('')+'</section>'}
+if(S.phase==='finalSail')out+='<section><h2>Final Voyage · Movement '+(3-S.finalMoves)+' of 2</h2><p>No further extraction or purchases. Loaded boats in Peru depart automatically; boats at sea advance toward Europe. After this movement, the European market opens.</p><button onclick="sail()">Advance final voyage</button></section>';
 if(S.phase==='sail')out+='<section><h2>3. Departures</h2><p>Boats move one sea region each round. A boat in Peru can stay to load, or depart. Boats in Europe unload through the port market.</p>'+p.boats.map((b,i)=>'<p>Boat '+(i+1)+' ('+b.cargo+'/4) '+(b.zone===0?'<label><input type="checkbox" id="depart'+i+'" '+(b.cargo?'checked':'')+'> Depart Peru</label>':'Moves onward automatically')+'</p>').join('')+'<button onclick="sail()">Move boats</button></section>';
 if(S.phase==='europe')out+=euroUI();
+if(S.finalMoves>0)out+='<section><b>Endgame triggered:</b> '+S.finalMoves+' final ship movement(s) remaining. No more Peru market.</section>';
 if(S.phase==='end')out+='<section><h2>Game over</h2><p>Only one island still has guano in reserve. Highest cash wins.</p><h3>'+[...S.players].sort((a,b)=>b.cash-a.cash).map(x=>x.name+': '+money(x.cash)).join(' · ')+'</h3><button onclick="start()">Play again</button></section>';
 a.innerHTML=out;
 }
@@ -105,7 +107,7 @@ if(m.cursor>=m.bids.length){note('Peru market cleared.');S.phase='sail'}render()
 function marketAll(){while(S.phase==='marketResolve')marketStep()}
 function initEurope(){
 let participants=clockwise().filter(i=>S.players[i].boats.some(b=>b.zone===2&&b.cargo>0));
-if(!participants.length){finishRound();return}
+if(!participants.length){S.markets.forEach(m=>m.price=Math.min(25,m.price+1));note('No ships in European ports. All port prices rise by $1 (maximum $25).');finishRound();return}
 S.euro={participants,cursor:0,pass:1,tokens:[]};S.phase='europe';advanceEurope()
 }
 function advanceEurope(){
@@ -154,13 +156,27 @@ S.euro=null;finishRound()
 function finishRound(){
 S.firstPlayer=(S.firstPlayer+1)%S.players.length;
 note('First Player marker advances to '+S.players[S.firstPlayer].name+'.');
-let active=S.players.filter(p=>p.reserve>0);
-if(active.length<=1){S.phase='end';note('Guano Age ends.')}
+if(S.finalMoves>0){
+S.finalMoves--;
+if(S.finalMoves===0){S.phase='end';note('Final European sale complete. The Guano Age ends.')}
+else{S.round++;S.phase='finalSail';note('One final ship movement remains.')}
+}else if(S.players.filter(p=>p.reserve>0).length<=1){
+S.finalMoves=2;S.round++;S.phase='finalSail';
+note('Endgame triggered: two final ship movements and their European market phases remain.')}
 else{S.round++;S.phase='produce'}
 render()
 }
 function sail(){
-S.players.forEach((p,i)=>p.boats.forEach((b,k)=>{if(b.zone===0){let depart=i===0?document.getElementById('depart'+k).checked:b.cargo>=3;if(depart&&b.cargo)b.zone=1}else if(b.zone===1)b.zone=2;else if(b.zone===3)b.zone=0}));
-note('Ships advance. '+S.players.reduce((a,p)=>a+p.boats.filter(b=>b.zone===2).length,0)+' boats in Europe.');initEurope()}
+let final=S.phase==='finalSail';
+S.players.forEach((p,i)=>p.boats.forEach((b,k)=>{
+if(b.zone===0){
+let depart=final?b.cargo>0:(i===0?document.getElementById('depart'+k).checked:b.cargo>=3);
+if(depart&&b.cargo)b.zone=1
+}else if(b.zone===1)b.zone=2;
+else if(b.zone===3&&!final)b.zone=0
+}));
+note((final?'Final voyage: ':'Ships advance. ')+S.players.reduce((a,p)=>a+p.boats.filter(b=>b.zone===2&&b.cargo>0).length,0)+' loaded boats in Europe.');
+initEurope()
+}
 start();
 </script></html>
