@@ -176,8 +176,66 @@ test('all ships unloading at the same European port receive its shared clearing 
   g.eval('resolveEurope()');
   assert.equal(yellow.cash, 65); // 3 × $15
   assert.equal(blue.cash, 35);   // 1 × $15
+  assert.equal(g.state.phase, 'euroResults');
+  assert.equal(g.state.markets[0].price, 15); // Results pause before the port recovery.
+  assert.match(g.elements.app.innerHTML, /Continue to next round/);
+  g.eval('finishRound()');
   assert.equal(g.state.markets[0].price, 16); // $17 -> $15 on sale, then +$1 at marker advance.
   assert.equal(g.state.markets[0].fill, 0);
+});
+
+test('Europe manifest turns alternate players before either player places a second boat', () => {
+  const g = game();
+  g.state.firstPlayer = 1;
+  g.state.players.forEach(p => p.boats.forEach(b => { b.zone = 2; b.cargo = 2; }));
+  g.eval('initEurope()');
+  assert.deepEqual(Array.from(g.state.euro.turns, t => `${t.i}:${t.k}`), [
+    '1:0', '2:0', '3:0', '4:0', '0:0',
+    '1:1', '2:1', '3:1', '4:1', '0:1',
+  ]);
+});
+
+test('Europe results show cargo, committed port, bluff and payout on each boat', () => {
+  const g = game();
+  const yellow = g.state.players[0], blue = g.state.players[1];
+  yellow.boats[0] = {zone:2,cargo:4};
+  yellow.boats[1] = {zone:2,cargo:3};
+  blue.boats[0] = {zone:2,cargo:2};
+  g.state.markets[0].price = 17;
+  g.state.markets[2].price = 20;
+  g.state.euro = {
+    turns:[{i:0,k:0},{i:1,k:0},{i:0,k:1}],
+    tokens:[
+      {i:0,k:0,dest:0,type:'real'},{i:0,k:0,dest:2,type:'bluff'},
+      {i:1,k:0,dest:0,type:'real'},
+      {i:0,k:1,dest:2,type:'real'},
+    ],
+  };
+  g.eval('resolveEurope()');
+  assert.equal(g.state.phase, 'euroResults');
+  assert.deepEqual(Array.from(g.state.euroReport.boats, b => b.income), [56,28,57]);
+  assert.equal(yellow.cash, 133); // $56 + $57, both boats.
+  assert.equal(blue.cash, 48);
+  const html = g.elements.app.innerHTML;
+  assert.match(html, /You \(Yellow\) · Boat 1/);
+  assert.match(html, /Cargo arriving: <b>4\/4 tonnes<\/b>/);
+  assert.match(html, /COMMIT<\/span> Liverpool/);
+  assert.match(html, /BLUFF<\/span> Hamburg/);
+  assert.match(html, /Sold <b>4 tonnes<\/b> × \$14\/tonne = <b>\$56<\/b>/);
+  assert.match(html, /You \(Yellow\) · Boat 2/);
+  assert.match(html, /BLUFF<\/span> None/);
+});
+
+test('a bluff with no commitment is explicitly shown as unsold cargo', () => {
+  const g = game();
+  g.state.players[0].boats[0] = {zone:2,cargo:3};
+  g.state.euro = { turns:[{i:0,k:0}], tokens:[{i:0,k:0,dest:1,type:'bluff'}] };
+  g.eval('resolveEurope()');
+  assert.equal(g.state.players[0].cash, 20);
+  assert.equal(g.state.players[0].boats[0].cargo, 3);
+  assert.equal(g.state.players[0].boats[0].zone, 2);
+  assert.match(g.elements.app.innerHTML, /No commitment/);
+  assert.match(g.elements.app.innerHTML, /3 tonnes remain aboard in Europe/);
 });
 
 test('sale still pays the buyer offer, never the seller minimum or midpoint', () => {
@@ -285,6 +343,8 @@ test('two final movements carry loaded Peru boats to Europe after the docks clos
   assert.equal(g.state.phase, 'europe');
   g.eval('euroHuman()');
   g.eval('euroPass()');
+  assert.equal(g.state.phase, 'euroResults');
+  g.eval('finishRound()');
   assert.equal(g.state.phase, 'end');
   assert.equal(g.state.finalMoves, 0);
   assert.equal(g.state.players[0].boats[0].cargo, 0);
