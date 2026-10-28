@@ -81,11 +81,11 @@ test('low European prices cap seller asks and buyer bids below the listed port p
   const c = g.eval('marketConditions()');
   assert.equal(c.bestEuropean, 7);
   assert.equal(c.expectedDelivery, 4);
-  assert.equal(c.maxPurchasePrice, 2); // $7 listed - 4 tonnes unloaded - $1 target margin.
+  assert.equal(c.maxPurchasePrice, 4); // $7 listed - two price steps for 4 tonnes - $1 target margin.
   const asks = [1, 2, 3, 4].map(i => g.eval(`botAsk(S.players[${i}], marketConditions())`));
   const offer = g.eval('botBid(S.players[3], marketConditions())');
-  assert.ok(asks.every(p => p <= 2));
-  assert.ok(offer <= 2);
+  assert.ok(asks.every(p => p <= 4));
+  assert.ok(offer <= 4);
   assert.ok(asks.some(p => p <= offer), 'bots should still be able to trade during a glut');
 });
 
@@ -96,9 +96,88 @@ test('a one-tonne shipment allows a higher European resale-based offer', () => {
   g.state.markets.forEach(m => { m.price = 7; });
   const c = g.eval('marketConditions()');
   assert.equal(c.expectedDelivery, 1);
-  assert.equal(c.maxPurchasePrice, 5);
-  assert.equal(g.eval('botAsk(S.players[4], marketConditions())'), 5);
-  assert.equal(g.eval('botBid(S.players[3], marketConditions())'), 5);
+  assert.equal(c.maxPurchasePrice, 6); // One tonne occupies one space, without lowering the level yet.
+  assert.equal(g.eval('botAsk(S.players[4], marketConditions())'), 6);
+  assert.equal(g.eval('botBid(S.players[3], marketConditions())'), 6);
+});
+
+test('European port count equals player count in 3-, 4-, and 5-player games', () => {
+  const g = game();
+  for (const count of [3, 4, 5]) {
+    g.elements.count.value = String(count);
+    g.eval('start()');
+    assert.equal(g.eval('S.markets.length'), count);
+    assert.equal(g.eval('S.markets.every(p => p.fill === 0)'), true);
+  }
+});
+
+test('four tonnes at a fresh $17 port lower the price by $2, not $4', () => {
+  const g = game();
+  const port = g.state.markets[0];
+  port.price = 17;
+  assert.equal(g.eval('fillPort(S.markets[0], 4)'), 15);
+  assert.equal(port.fill, 0);
+  assert.equal(g.eval('fillPort(S.markets[0], 2)'), 14);
+  assert.equal(port.fill, 0);
+});
+
+test('a half-filled price level persists across deliveries and is visible on the board', () => {
+  const g = game();
+  const port = g.state.markets[0];
+  port.price = 17;
+  assert.equal(g.eval('fillPort(S.markets[0], 3)'), 16);
+  assert.equal(port.fill, 1);
+  g.eval('render()');
+  assert.match(g.elements.app.innerHTML, /Current price level: ● ○ · 1\/2 spaces filled/);
+  assert.equal(g.eval('fillPort(S.markets[0], 1)'), 15);
+  assert.equal(port.fill, 0);
+  assert.equal(g.eval('fillPort(S.markets[0], 1)'), 15);
+  assert.equal(port.fill, 1);
+  assert.equal(g.eval('fillPort(S.markets[0], 1)'), 14);
+  assert.equal(port.fill, 0);
+});
+
+test('advancing the First Player marker clears two tonnes from every port, including used ports', () => {
+  const g = game();
+  const port = g.state.markets[0];
+  port.price = 17;
+  g.eval('fillPort(S.markets[0], 3)');
+  assert.equal(port.price, 16);
+  assert.equal(port.fill, 1);
+  g.eval('finishRound()');
+  assert.equal(port.price, 17);
+  assert.equal(port.fill, 1);
+  assert.equal(g.state.markets[1].price, 12); // Unvisited Le Havre also recovers $1.
+  assert.equal(g.eval('fillPort(S.markets[0], 1)'), 16);
+  assert.equal(port.fill, 0);
+});
+
+test('five ports absorb ten tonnes per round without changing aggregate price levels', () => {
+  const g = game();
+  const initial = g.state.markets.reduce((sum,port) => sum+port.price,0);
+  g.eval('fillPort(S.markets[0], 4)');
+  g.eval('fillPort(S.markets[1], 4)');
+  g.eval('fillPort(S.markets[2], 2)');
+  g.eval('finishRound()');
+  assert.equal(g.state.markets.reduce((sum,port) => sum+port.price,0),initial);
+  assert.ok(g.state.markets.every(port => port.fill === 0));
+});
+
+test('all ships unloading at the same European port receive its shared clearing price', () => {
+  const g = game();
+  const yellow = g.state.players[0], blue = g.state.players[1];
+  g.state.markets[0].price = 17;
+  yellow.boats[0] = {zone:2,cargo:3};
+  blue.boats[0] = {zone:2,cargo:1};
+  g.state.euro = {
+    turns:[{i:0,k:0},{i:1,k:0}],
+    tokens:[{i:0,k:0,dest:0,type:'real'},{i:1,k:0,dest:0,type:'real'}]
+  };
+  g.eval('resolveEurope()');
+  assert.equal(yellow.cash, 65); // 3 × $15
+  assert.equal(blue.cash, 35);   // 1 × $15
+  assert.equal(g.state.markets[0].price, 16); // $17 -> $15 on sale, then +$1 at marker advance.
+  assert.equal(g.state.markets[0].fill, 0);
 });
 
 test('sale still pays the buyer offer, never the seller minimum or midpoint', () => {
@@ -209,5 +288,5 @@ test('two final movements carry loaded Peru boats to Europe after the docks clos
   assert.equal(g.state.phase, 'end');
   assert.equal(g.state.finalMoves, 0);
   assert.equal(g.state.players[0].boats[0].cargo, 0);
-  assert.equal(g.state.players[0].cash, 29); // Liverpool rose to $10 in the first voyage, then -1 tonne.
+  assert.equal(g.state.players[0].cash, 30); // Liverpool rose to $10; one tonne only half-fills its $10 level.
 });

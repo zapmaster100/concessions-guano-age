@@ -10,7 +10,7 @@ small{color:#685b49}.ship{display:inline-block;padding:5px;background:#e8dcc4;ma
 .route-board{display:grid;grid-template-columns:1fr 1fr;gap:9px;background:#b7c9c4;padding:10px;border:4px double #75634a;border-radius:9px}.region{background:#f5edda;border:2px solid #b8a17b;border-radius:8px;min-height:112px;padding:10px}.region h3{margin:0 0 7px}.vessel{display:inline-block;background:#fffaf0;border:2px solid;border-radius:8px;padding:6px;margin:3px;font-size:13px}.port-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}.port{border:2px solid #c5af88;border-radius:7px;padding:10px;background:#f8f0df}.marker{display:inline-block;border:2px solid;border-radius:18px;padding:5px 8px;margin:3px;background:#fff9e7;font-weight:bold}.turnbox{background:#e9d5a7;padding:10px;border-radius:6px;margin:10px 0}#log{max-height:240px;overflow:auto;white-space:pre-line;background:#f4ead6;padding:12px} .tag{font-weight:bold}
 </style>
 <h1>Concessions <small>— The Guano Age</small></h1>
-<p><strong>Version 0.2.0 · Build 013</strong> · 1 human vs 2–4 bots · 1 concession and 2 boats each · no upkeep · finite reserves.</p>
+<p><strong>Version 0.2.0 · Build 014</strong> · 1 human vs 2–4 bots · 1 concession and 2 boats each · no upkeep · finite reserves.</p>
 <section><label>Players <select id="count"><option>3</option><option>4</option><option>5</option></select></label><button onclick="start()">New game</button><span id="status"></span></section>
 <div id="app"></div><section><h2>Log</h2><div id="log"></div></section>
 <script>
@@ -21,7 +21,7 @@ function note(t){logs.unshift('Round '+S.round+': '+t);document.getElementById('
 function money(n){return '$'+n}
 function start(){
 const n=+document.getElementById('count').value;logs=[];
-S={round:1,firstPlayer:0,finalMoves:0,exhausted:false,docksClosed:false,commitments:null,phase:'produce',players:Array.from({length:n},(_,i)=>({name:names[i],cash:20,reserve:24,stock:0,boats:[{zone:0,cargo:0},{zone:0,cargo:0}]})),markets:ports.slice(0,n+1).map((name,i)=>({name,price:9+i*2})),offers:[],asks:[]};
+S={round:1,firstPlayer:0,finalMoves:0,exhausted:false,docksClosed:false,commitments:null,phase:'produce',players:Array.from({length:n},(_,i)=>({name:names[i],cash:20,reserve:24,stock:0,boats:[{zone:0,cargo:0},{zone:0,cargo:0}]})),markets:ports.slice(0,n).map((name,i)=>({name,price:9+i*2,fill:0})),offers:[],asks:[]};
 note('Game begins. Concession reserves are private. Ships hold 4 tonnes.');render()}
 function priority(i){return (i-S.firstPlayer+S.players.length)%S.players.length}
 function clockwise(){return S.players.map((_,j)=>(S.firstPlayer+j)%S.players.length)}
@@ -33,7 +33,7 @@ const order=[1,2,0,3],labels=['Peru · Islas','Atlántico Norte','Europa · Puer
 return '<section><h2>Shipping Board</h2><p>Peru → North Atlantic → Europe → South Atlantic → Peru</p><div class="route-board">'+order.map(z=>'<div class="region"><h3>'+labels[z]+'</h3>'+S.players.flatMap((p,i)=>p.boats.map((b,k)=>b.zone===z?'<span class="vessel" style="border-color:'+colors[i]+'"><b>'+p.name.split(' ')[0]+' ⛵'+(k+1)+'</b><br>Guano '+b.cargo+'/4</span>':'')).join('')+'</div>').join('')+'</div></section>'
 }
 function portHTML(){
-return '<section><h2>European Ports</h2><div class="port-grid">'+S.markets.map((m,j)=>'<div class="port"><b>'+m.name+'</b><p>$'+m.price+' / tonne</p>'+((S.euro&&S.phase==='europe')?S.euro.tokens.filter(t=>t.dest===j).map(t=>'<span class="marker" style="border-color:'+colors[t.i]+'">'+S.players[t.i].name.split(' ')[0]+' ⛵'+(t.k+1)+' ?</span>').join(''):'')+'</div>').join('')+'</div></section>'
+return '<section><h2>European Ports</h2><p>Each price level has two tonne spaces. A filled space persists between rounds; when the First Player marker advances, each port consumes two tonnes and its price rises by $1.</p><div class="port-grid">'+S.markets.map((m,j)=>'<div class="port"><b>'+m.name+'</b><p>$'+m.price+' / tonne</p><small>Current price level: '+(m.fill?'● ○':'○ ○')+' · '+m.fill+'/2 spaces filled</small><div>'+((S.euro&&S.phase==='europe')?S.euro.tokens.filter(t=>t.dest===j).map(t=>'<span class="marker" style="border-color:'+colors[t.i]+'">'+S.players[t.i].name.split(' ')[0]+' ⛵'+(t.k+1)+' ?</span>').join(''):'')+'</div></div>').join('')+'</div></section>'
 }
 function euroUI(){
 let e=S.euro,turn=e.turns[e.cursor];if(!turn)return '';
@@ -86,10 +86,11 @@ let pressure=Math.max(-2,Math.min(2,volumePressure*.75+competitionPressure*.25))
 let budgets=openBoats.map(b=>Math.floor(b.cash/Math.min(4,b.free))).sort((a,b)=>a-b);
 let typicalBudget=budgets.length?budgets[Math.floor((budgets.length-1)/2)]:0;
 let bestEuropean=Math.max(...S.markets.map(m=>m.price));
-// Europe pays its listed price LESS the tonnes unloaded. Assume one boat fills as far as dock stock allows.
+// Two tonnes occupy each price level. A half-filled level makes the next tonne matter.
 let existingCargo=Math.max(0,...openBoats.map(b=>4-b.free));
 let expectedDelivery=Math.min(4,Math.max(1,supply+existingCargo));
-let maxPurchasePrice=Math.max(1,bestEuropean-expectedDelivery-1); // Aim for $1 profit; all offers have a $1 floor.
+let bestExpectedPayout=Math.max(...S.markets.map(m=>Math.max(1,m.price-Math.floor((m.fill+expectedDelivery)/2))));
+let maxPurchasePrice=Math.max(1,bestExpectedPayout-1); // Aim for $1 profit; all offers have a $1 floor.
 return {supply,sellers,capacity,buyers,pressure,typicalBudget,bestEuropean,expectedDelivery,maxPurchasePrice};
 }
 function botAsk(q,c){
@@ -149,7 +150,7 @@ S.phase='sail';render()
 function marketAll(){while(S.phase==='marketResolve')marketStep()}
 function initEurope(){
 let turns=clockwise().flatMap(i=>S.players[i].boats.map((b,k)=>b.zone===2&&b.cargo>0?{i,k}:null).filter(Boolean));
-if(!turns.length){S.markets.forEach(m=>m.price=Math.min(25,m.price+1));note('No ships in European ports. All port prices rise by $1 (maximum $25).');finishRound();return}
+if(!turns.length){note('No ships in European ports.');finishRound();return}
 S.euro={turns,cursor:0,pass:1,tokens:[]};S.phase='europe';advanceEurope()
 }
 function advanceEurope(){
@@ -161,7 +162,10 @@ function botPlace(i,k){
 let e=S.euro,existing=e.tokens.filter(t=>t.i===i&&t.k===k);
 if(e.pass===2&&Math.random()<.22){e.cursor++;advanceEurope();return}
 let available=S.markets.map((m,j)=>j).filter(j=>!existing.some(t=>t.dest===j));
-let sorted=available.sort((a,b)=>S.markets[b].price-S.markets[a].price);
+let sorted=available.sort((a,b)=>{
+let cargo=S.players[i].boats[k].cargo;
+return (S.markets[b].price-Math.floor((S.markets[b].fill+cargo)/2))-(S.markets[a].price-Math.floor((S.markets[a].fill+cargo)/2));
+});
 let dest=sorted[Math.min(sorted.length-1,Math.floor(Math.random()*Math.min(3,sorted.length)))];
 let type=e.pass===1?(Math.random()<.7?'real':'bluff'):(existing[0].type==='real'?'bluff':'real');
 e.tokens.push({i,k,dest,type});note(S.players[i].name+' Boat '+(k+1)+' places a face-down marker at '+S.markets[dest].name);
@@ -174,6 +178,12 @@ e.tokens.push({i:turn.i,k:turn.k,dest,type});note('Yellow Boat '+(turn.k+1)+' pl
 e.cursor++;advanceEurope()
 }
 function euroPass(){if(S.euro.pass!==2)return;let t=S.euro.turns[S.euro.cursor];note('Yellow Boat '+(t.k+1)+' passes on second marker.');S.euro.cursor++;advanceEurope()}
+function fillPort(m,tonnes){
+let filled=m.fill+tonnes;
+m.price=Math.max(1,m.price-Math.floor(filled/2));
+m.fill=filled%2; // Carry a single occupied space into the next sale, even across rounds.
+return m.price;
+}
 function resolveEurope(){
 let e=S.euro,deliveries=[];
 note('Manifests revealed: '+e.tokens.map(t=>S.players[t.i].name+' Boat '+(t.k+1)+' '+(t.type==='real'?'COMMITMENT':'BLUFF')+' at '+S.markets[t.dest].name).join('; '));
@@ -185,18 +195,19 @@ deliveries.push({i:t.i,b:boat,dest:real.dest})
 });
 S.markets.forEach((m,j)=>{
 let ds=deliveries.filter(d=>d.dest===j),total=ds.reduce((sum,d)=>sum+d.b.cargo,0);
-if(!ds.length){m.price=Math.min(25,m.price+1);return}
-let listed=m.price;
-let payout=Math.max(1,listed-total);
-note(m.name+': listed $'+listed+' minus '+total+' tonnes = $'+payout+' per tonne.');
+if(!ds.length)return;
+let listed=m.price,previousFill=m.fill,payout=fillPort(m,total);
+note(m.name+': listed $'+listed+', '+total+' tonnes unloaded into two-tonne price levels ('+previousFill+' previously filled) = $'+payout+' per tonne.');
 ds.forEach(d=>{let gain=payout*d.b.cargo;S.players[d.i].cash+=gain;note(S.players[d.i].name+' sells '+d.b.cargo+' tonnes at '+m.name+' for $'+gain+' ($'+payout+'/tonne)');d.b.cargo=0;d.b.zone=3});
-m.price=payout
 });
 S.euro=null;finishRound()
 }
 function finishRound(){
 S.firstPlayer=(S.firstPlayer+1)%S.players.length;
 note('First Player marker advances to '+S.players[S.firstPlayer].name+'.');
+// Each port consumes two tonnes. Both spaces are cleared, so even a half-filled level stays half-filled.
+S.markets.forEach(m=>{m.price=Math.min(25,m.price+1)});
+note('European ports consume 2 tonnes each. Listed prices recover by up to $1 (maximum $25); half-filled spaces carry forward.');
 if(S.finalMoves>0){
 S.finalMoves--;
 if(S.finalMoves===0){S.phase='end';note('Final European sale complete. The Guano Age ends.')}
