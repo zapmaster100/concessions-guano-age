@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Concessions: The Guano Age — v0.1.9</title>
+<title>Concessions: The Guano Age — v0.2.0</title>
 <style>
 body{font:15px Georgia,serif;background:#eee4ce;color:#32291e;max-width:1150px;margin:auto;padding:22px}
 h1,h2{color:#583b22}button,select,input{font:inherit;padding:7px;margin:3px;border:1px solid #947b58;border-radius:4px;background:#fffaf0}
@@ -10,7 +10,7 @@ small{color:#685b49}.ship{display:inline-block;padding:5px;background:#e8dcc4;ma
 .route-board{display:grid;grid-template-columns:1fr 1fr;gap:9px;background:#b7c9c4;padding:10px;border:4px double #75634a;border-radius:9px}.region{background:#f5edda;border:2px solid #b8a17b;border-radius:8px;min-height:112px;padding:10px}.region h3{margin:0 0 7px}.vessel{display:inline-block;background:#fffaf0;border:2px solid;border-radius:8px;padding:6px;margin:3px;font-size:13px}.port-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}.port{border:2px solid #c5af88;border-radius:7px;padding:10px;background:#f8f0df}.marker{display:inline-block;border:2px solid;border-radius:18px;padding:5px 8px;margin:3px;background:#fff9e7;font-weight:bold}.turnbox{background:#e9d5a7;padding:10px;border-radius:6px;margin:10px 0}#log{max-height:240px;overflow:auto;white-space:pre-line;background:#f4ead6;padding:12px} .tag{font-weight:bold}
 </style>
 <h1>Concessions <small>— The Guano Age</small></h1>
-<p><strong>Version 0.1.9 · Build 009</strong> · 1 human vs 2–4 bots · 1 concession and 2 boats each · no upkeep · finite reserves.</p>
+<p><strong>Version 0.2.0 · Build 010</strong> · 1 human vs 2–4 bots · 1 concession and 2 boats each · no upkeep · finite reserves.</p>
 <section><label>Players <select id="count"><option>3</option><option>4</option><option>5</option></select></label><button onclick="start()">New game</button><span id="status"></span></section>
 <div id="app"></div><section><h2>Log</h2><div id="log"></div></section>
 <script>
@@ -33,16 +33,17 @@ const order=[1,2,0,3],labels=['Peru · Islas','Atlántico Norte','Europa · Puer
 return '<section><h2>Shipping Board</h2><p>Peru → North Atlantic → Europe → South Atlantic → Peru</p><div class="route-board">'+order.map(z=>'<div class="region"><h3>'+labels[z]+'</h3>'+S.players.flatMap((p,i)=>p.boats.map((b,k)=>b.zone===z?'<span class="vessel" style="border-color:'+colors[i]+'"><b>'+p.name.split(' ')[0]+' ⛵'+(k+1)+'</b><br>Guano '+b.cargo+'/4</span>':'')).join('')+'</div>').join('')+'</div></section>'
 }
 function portHTML(){
-return '<section><h2>European Ports</h2><div class="port-grid">'+S.markets.map((m,j)=>'<div class="port"><b>'+m.name+'</b><p>$'+m.price+' / tonne</p>'+((S.euro&&S.phase==='europe')?S.euro.tokens.filter(t=>t.dest===j).map(t=>'<span class="marker" style="border-color:'+colors[t.i]+'">'+S.players[t.i].name.split(' ')[0]+' ?</span>').join(''):'')+'</div>').join('')+'</div></section>'
+return '<section><h2>European Ports</h2><div class="port-grid">'+S.markets.map((m,j)=>'<div class="port"><b>'+m.name+'</b><p>$'+m.price+' / tonne</p>'+((S.euro&&S.phase==='europe')?S.euro.tokens.filter(t=>t.dest===j).map(t=>'<span class="marker" style="border-color:'+colors[t.i]+'">'+S.players[t.i].name.split(' ')[0]+' ⛵'+(t.k+1)+' ?</span>').join(''):'')+'</div>').join('')+'</div></section>'
 }
 function euroUI(){
-let e=S.euro,actor=e.participants[e.cursor];
-if(actor===undefined)return '';
-let first=e.pass===1,placed=e.tokens.filter(t=>t.i===0);
+let e=S.euro,turn=e.turns[e.cursor];if(!turn)return '';
+let i=turn.i,k=turn.k,placed=e.tokens.filter(t=>t.i===i&&t.k===k);
 let allowed=S.markets.map((m,j)=>({m,j})).filter(x=>!placed.some(t=>t.dest===x.j));
-return '<section><h2>4. Europe — Secret Manifests</h2><p>Each player places one face-down marker clockwise. On the second circuit, place the remaining marker at another port or pass. The symbols remain secret until all placements finish.</p><div class="turnbox"><b>Pass '+e.pass+' of 2</b> · '+S.players[actor].name+' to place'+(first?' (mandatory)':' (optional)')+'</div><p>Placed markers: '+e.tokens.length+' · Participating players: '+e.participants.length+'</p>'+
-(actor===0?'<label>Port <select id="portChoice">'+allowed.map(x=>'<option value="'+x.j+'">'+x.m.name+' · $'+x.m.price+'</option>').join('')+'</select></label> <label>Marker <select id="markerChoice">'+(first?'<option value="real">Commitment</option><option value="bluff">Bluff</option>':(placed[0]&&placed[0].type==='real'?'<option value="bluff">Bluff</option>':'<option value="real">Commitment</option>'))+'</select></label><button onclick="euroHuman()">Place face down</button>'+(first?'':'<button onclick="euroPass()">Pass</button>'):'<button onclick="advanceEurope()">Continue</button>')+'</section>'
+let typeOptions=placed.length?(placed[0].type==='real'?'<option value="bluff">Bluff</option>':'<option value="real">Commitment</option>'):'<option value="real">Commitment</option><option value="bluff">Bluff</option>';
+return '<section><h2>4. Europe — Ship Manifests</h2><p>Each loaded boat has its own commitment and optional bluff. Each circuit goes clockwise, one marker per boat. All markers remain face down until reveal.</p><div class="turnbox"><b>Pass '+e.pass+' of 2</b> · '+S.players[i].name+' · Boat '+(k+1)+' ('+S.players[i].boats[k].cargo+' tonnes)'+(e.pass===2?' · optional':'')+'</div><p>Face-down markers placed: '+e.tokens.length+'</p>'+
+(i===0?'<label>Port <select id="portChoice">'+allowed.map(x=>'<option value="'+x.j+'">'+x.m.name+' · $'+x.m.price+'</option>').join('')+'</select></label><label>Marker <select id="markerChoice">'+typeOptions+'</select></label><button onclick="euroHuman()">Place face down</button>'+(e.pass===2?'<button onclick="euroPass()">Pass</button>':''):'<button onclick="advanceEurope()">Continue</button>')+'</section>'
 }
+
 function render(){
 if(!S)return;let p=S.players[0],a=document.getElementById('app');
 document.getElementById('status').textContent=' Round '+S.round+' · '+S.phase;
@@ -106,41 +107,40 @@ if(m.cursor>=m.bids.length){note('Peru market cleared.');S.phase='sail'}render()
 }
 function marketAll(){while(S.phase==='marketResolve')marketStep()}
 function initEurope(){
-let participants=clockwise().filter(i=>S.players[i].boats.some(b=>b.zone===2&&b.cargo>0));
-if(!participants.length){S.markets.forEach(m=>m.price=Math.min(25,m.price+1));note('No ships in European ports. All port prices rise by $1 (maximum $25).');finishRound();return}
-S.euro={participants,cursor:0,pass:1,tokens:[]};S.phase='europe';advanceEurope()
+let turns=clockwise().flatMap(i=>S.players[i].boats.map((b,k)=>b.zone===2&&b.cargo>0?{i,k}:null).filter(Boolean));
+if(!turns.length){S.markets.forEach(m=>m.price=Math.min(25,m.price+1));note('No ships in European ports. All port prices rise by $1 (maximum $25).');finishRound();return}
+S.euro={turns,cursor:0,pass:1,tokens:[]};S.phase='europe';advanceEurope()
 }
 function advanceEurope(){
 let e=S.euro;if(!e)return;
-if(e.cursor>=e.participants.length){if(e.pass===1){e.pass=2;e.cursor=0}else{resolveEurope();return}}
-let i=e.participants[e.cursor];
-if(i!==0){botPlace(i);return}
-render()
+if(e.cursor>=e.turns.length){if(e.pass===1){e.pass=2;e.cursor=0}else{resolveEurope();return}}
+let turn=e.turns[e.cursor];if(turn.i!==0){botPlace(turn.i,turn.k);return}render()
 }
-function botPlace(i){
-let e=S.euro,existing=e.tokens.filter(t=>t.i===i);
+function botPlace(i,k){
+let e=S.euro,existing=e.tokens.filter(t=>t.i===i&&t.k===k);
 if(e.pass===2&&Math.random()<.22){e.cursor++;advanceEurope();return}
 let available=S.markets.map((m,j)=>j).filter(j=>!existing.some(t=>t.dest===j));
 let sorted=available.sort((a,b)=>S.markets[b].price-S.markets[a].price);
 let dest=sorted[Math.min(sorted.length-1,Math.floor(Math.random()*Math.min(3,sorted.length)))];
 let type=e.pass===1?(Math.random()<.7?'real':'bluff'):(existing[0].type==='real'?'bluff':'real');
-e.tokens.push({i,dest,type});note(S.players[i].name+' places a face-down marker at '+S.markets[dest].name);
+e.tokens.push({i,k,dest,type});note(S.players[i].name+' Boat '+(k+1)+' places a face-down marker at '+S.markets[dest].name);
 e.cursor++;advanceEurope()
 }
 function euroHuman(){
-let dest=+document.getElementById('portChoice').value,type=document.getElementById('markerChoice').value;
-if(S.euro.tokens.some(t=>t.i===0&&t.dest===dest)){alert('Choose a different port.');return}
-S.euro.tokens.push({i:0,dest,type});note('Yellow places a face-down marker at '+S.markets[dest].name);
-S.euro.cursor++;advanceEurope()
+let e=S.euro,turn=e.turns[e.cursor],dest=+document.getElementById('portChoice').value,type=document.getElementById('markerChoice').value;
+if(e.tokens.some(t=>t.i===turn.i&&t.k===turn.k&&t.dest===dest)){alert('This boat must use a different port for its second marker.');return}
+e.tokens.push({i:turn.i,k:turn.k,dest,type});note('Yellow Boat '+(turn.k+1)+' places a face-down marker at '+S.markets[dest].name);
+e.cursor++;advanceEurope()
 }
-function euroPass(){if(S.euro.pass!==2)return;note('Yellow passes on second marker.');S.euro.cursor++;advanceEurope()}
+function euroPass(){if(S.euro.pass!==2)return;let t=S.euro.turns[S.euro.cursor];note('Yellow Boat '+(t.k+1)+' passes on second marker.');S.euro.cursor++;advanceEurope()}
 function resolveEurope(){
 let e=S.euro,deliveries=[];
-note('Manifests revealed: '+e.tokens.map(t=>S.players[t.i].name+' '+(t.type==='real'?'COMMITMENT':'BLUFF')+' at '+S.markets[t.dest].name).join('; '));
-e.participants.forEach(i=>{
-let real=e.tokens.find(t=>t.i===i&&t.type==='real');
-if(!real){note(S.players[i].name+' placed only a bluff; cargo waits in Europe.');return}
-S.players[i].boats.filter(b=>b.zone===2&&b.cargo>0).forEach(b=>deliveries.push({i,b,dest:real.dest}))
+note('Manifests revealed: '+e.tokens.map(t=>S.players[t.i].name+' Boat '+(t.k+1)+' '+(t.type==='real'?'COMMITMENT':'BLUFF')+' at '+S.markets[t.dest].name).join('; '));
+e.turns.forEach(t=>{
+let real=e.tokens.find(x=>x.i===t.i&&x.k===t.k&&x.type==='real');
+let boat=S.players[t.i].boats[t.k];
+if(!real){note(S.players[t.i].name+' Boat '+(t.k+1)+' placed only a bluff; cargo waits in Europe.');return}
+deliveries.push({i:t.i,b:boat,dest:real.dest})
 });
 S.markets.forEach((m,j)=>{
 let ds=deliveries.filter(d=>d.dest===j),total=ds.reduce((sum,d)=>sum+d.b.cargo,0);
