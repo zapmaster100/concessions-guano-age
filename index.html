@@ -10,7 +10,7 @@ small{color:#685b49}.ship{display:inline-block;padding:5px;background:#e8dcc4;ma
 .route-board{display:grid;grid-template-columns:1fr 1fr;gap:9px;background:#b7c9c4;padding:10px;border:4px double #75634a;border-radius:9px}.region{background:#f5edda;border:2px solid #b8a17b;border-radius:8px;min-height:112px;padding:10px}.region h3{margin:0 0 7px}.vessel{display:inline-block;background:#fffaf0;border:2px solid;border-radius:8px;padding:6px;margin:3px;font-size:13px}.port-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}.port{border:2px solid #c5af88;border-radius:7px;padding:10px;background:#f8f0df}.marker{display:inline-block;border:2px solid;border-radius:18px;padding:5px 8px;margin:3px;background:#fff9e7;font-weight:bold}.turnbox{background:#e9d5a7;padding:10px;border-radius:6px;margin:10px 0}#log{max-height:240px;overflow:auto;white-space:pre-line;background:#f4ead6;padding:12px} .tag{font-weight:bold}
 </style>
 <h1>Concessions <small>— The Guano Age</small></h1>
-<p><strong>Version 0.2.0 · Build 010</strong> · 1 human vs 2–4 bots · 1 concession and 2 boats each · no upkeep · finite reserves.</p>
+<p><strong>Version 0.2.0 · Build 011</strong> · 1 human vs 2–4 bots · 1 concession and 2 boats each · no upkeep · finite reserves.</p>
 <section><label>Players <select id="count"><option>3</option><option>4</option><option>5</option></select></label><button onclick="start()">New game</button><span id="status"></span></section>
 <div id="app"></div><section><h2>Log</h2><div id="log"></div></section>
 <script>
@@ -50,7 +50,7 @@ document.getElementById('status').textContent=' Round '+S.round+' · '+S.phase;
 let out='<section><h2>Turn Order</h2><p><b>First Player marker:</b> <span style="color:'+colors[S.firstPlayer]+';font-weight:bold">◆ '+S.players[S.firstPlayer].name+'</span> · Clockwise: '+clockwise().map(i=>(i===S.firstPlayer?'◆ ':'')+S.players[i].name).join(' → ')+'</p><small>Peru seller ties: earlier in turn order first. Buyer ties: later in turn order first. Marker advances after Europe resolves.</small></section><section><h2>Merchant Houses</h2><div class="grid">'+S.players.map((x,i)=>'<div class="player" style="border-top:5px solid '+colors[i]+'"><b>'+x.name+'</b><p>Cash '+money(x.cash)+' · Island reserve '+x.reserve+' · Peru stock '+x.stock+'</p>'+ships(x)+'</div>').join('')+'</div></section>';
 out+=boardHTML();out+=portHTML();
 if(S.phase==='produce')out+='<section><h2>1. Extract Guano</h2><p>Choose how much to extract (maximum 4 tonnes per round). Extracted guano remains in Peru until purchased.</p><input id="extract" type="number" min="0" max="'+Math.min(4,p.reserve)+'" value="'+Math.min(3,p.reserve)+'"><button onclick="produce()">Extract and continue</button></section>';
-if(S.phase==='peru')out+='<section><h2>2. Peru Market</h2><p>Set a minimum selling price (Precio) and an offer to buy (Oferta). Buyers pay their own offer. Highest offer resolves against lowest ask. Equal values use turn order; later buyers resolve first.</p><label>Precio <input id="ask" type="number" min="1" max="25" value="7"></label><label>Oferta <input id="bid" type="number" min="1" max="25" value="10"></label><button onclick="peru()">Reveal and clear market</button></section>';
+if(S.phase==='peru'){let c=marketConditions();out+='<section><h2>2. Peru Market</h2><p><b>On the docks:</b> '+c.supply+' tonnes from '+c.sellers+' sellers · '+c.capacity+' tonnes of open capacity across '+c.buyers+' boats.</p><p>Set a minimum selling price (Precio) and an offer to buy (Oferta). Buyers pay their own offer. Highest offer resolves against lowest ask. Equal values use turn order; later buyers resolve first.</p><label>Precio <input id="ask" type="number" min="1" max="25" value="7"></label><label>Oferta <input id="bid" type="number" min="1" max="25" value="10"></label><button onclick="peru()">Reveal and clear market</button></section>'}
 if(S.phase==='marketResolve'){let m=S.market;
 out+='<section><h2>Peru Market — Live Resolution</h2><p>Cheapest sellers on the left; highest buying offers first on the right. Buyers pay their offered price.</p><div class="grid"><div><h3>Islands · Precio</h3>'+m.asks.map(x=>'<div class="player" style="border-left:6px solid '+colors[x.i]+'"><b>'+S.players[x.i].name+'</b> · minimum $'+x.price+' / tonne<br>'+cubes(x.left)+' <b>'+x.left+' tonnes</b></div>').join('')+'</div><div><h3>Ships · Oferta</h3>'+m.bids.map((x,i)=>'<div class="player" style="border-left:6px solid '+colors[x.i]+';'+(i===m.cursor?'background:#f8e1a4':'')+'"><b>'+S.players[x.i].name+' Boat '+(x.k+1)+'</b> · offer $'+x.price+' / tonne<br>Loaded '+S.players[x.i].boats[x.k].cargo+'/4 tonnes'+(i===m.cursor?' · <b>NEXT</b>':'')+'</div>').join('')+'</div></div><p><b>Next:</b> '+marketNextText()+'</p><button onclick="marketStep()">Resolve next offer</button><button onclick="marketAll()">Resolve all</button><h3>Transactions</h3>'+m.history.map(x=>'<p>'+x+'</p>').join('')+'</section>'}
 if(S.phase==='finalSail')out+='<section><h2>Final Voyage · Movement '+(3-S.finalMoves)+' of 2</h2><p>No further extraction or purchases. Loaded boats in Peru depart automatically; boats at sea advance toward Europe. After this movement, the European market opens.</p><button onclick="sail()">Advance final voyage</button></section>';
@@ -64,27 +64,44 @@ function produce(){
 let p=S.players[0],v=Math.max(0,Math.min(4,p.reserve,Math.floor(+document.getElementById('extract').value||0)));p.reserve-=v;p.stock+=v;
 S.players.slice(1).forEach(q=>{let x=Math.min(q.reserve,q.stock>5?1:2+Math.floor(Math.random()*3));q.reserve-=x;q.stock+=x});
 note('Extraction: '+S.players.map(q=>q.name+' '+q.stock+' available').join(', '));S.phase='peru';render()}
-function botAsk(q){
-let availableBoats=S.players.reduce((n,p)=>n+p.boats.filter(b=>b.zone===0&&b.cargo<4).length,0);
-let pressure=(q.cash<12?4:q.cash<25?2:0)+(q.stock>=7?3:q.stock>=4?1:0);
-if(availableBoats===0)return 9;
-let price=10-pressure;
-if(q.stock<=2&&q.cash>=30)price+=2;
-return Math.max(1,Math.min(17,price));
+function marketConditions(){
+let supply=S.players.reduce((n,p)=>n+p.stock,0);
+let sellers=S.players.filter(p=>p.stock>0).length;
+let openBoats=S.players.flatMap(p=>p.boats.filter(b=>b.zone===0&&b.cargo<4).map(b=>({cash:p.cash,free:4-b.cargo})));
+let capacity=openBoats.reduce((n,b)=>n+b.free,0),buyers=openBoats.length;
+// Both tonnes and the number of competing houses/ships matter. All of these are public before offers are revealed.
+let volumePressure=Math.log2((supply+2)/(capacity+2));
+let competitionPressure=Math.log2((sellers+1)/(buyers+1));
+let pressure=Math.max(-2,Math.min(2,volumePressure*.75+competitionPressure*.25));
+// A high reserve price is worthless when the boats can't afford even a typical load.
+let budgets=openBoats.map(b=>Math.floor(b.cash/Math.min(4,b.free))).sort((a,b)=>a-b);
+let typicalBudget=budgets.length?budgets[Math.floor((budgets.length-1)/2)]:0;
+return {supply,sellers,capacity,buyers,pressure,typicalBudget};
 }
-function botBid(q){
+function botAsk(q,c){
+if(c.buyers===0)return 9;
+let urgency=(q.cash<12?2:q.cash<25?1:0)+(q.stock>=7?2:q.stock>=4?1:0);
+let price=11-Math.round(c.pressure*3)-urgency;
+// Sellers with more stock than their likely share of the boats undercut more sharply in a glut.
+if(c.pressure>.35&&c.sellers>c.buyers&&q.stock>c.capacity/c.sellers)price--;
+if(q.stock<=2&&q.cash>=30)price+=2;
+price=Math.min(price,Math.max(1,c.typicalBudget));
+return Math.max(1,Math.min(25,price));
+}
+function botBid(q,c){
 let free=q.boats.reduce((n,b)=>n+(b.zone===0?4-b.cargo:0),0);
-if(free===0||q.cash<2)return 1;
+if(free===0||q.cash<1)return 1;
 let bestEuropean=Math.max(...S.markets.map(m=>m.price));
-let affordable=Math.floor(q.cash/Math.min(4,free));
-let target=Math.min(bestEuropean-4,affordable);
-if(q.cash<15)target=Math.min(target,6);
-return Math.max(1,Math.min(18,target));
+let affordable=Math.max(1,Math.floor(q.cash/Math.min(4,free)));
+// Abundant dock stock lets buyers bid less; scarce stock makes them compete, subject to cash and resale margins.
+let target=Math.min(12,Math.max(2,bestEuropean-5))-Math.round(c.pressure*4);
+return Math.max(1,Math.min(25,bestEuropean-3,affordable,target));
 }
 function peru(){
 let ask=Math.max(1,+document.getElementById('ask').value||1),bid=Math.max(1,+document.getElementById('bid').value||1);
-let asks=S.players.map((q,i)=>({i,price:i?botAsk(q):ask,left:q.stock})).filter(x=>x.left>0).sort((a,b)=>a.price-b.price||priority(a.i)-priority(b.i));
-let bids=[];S.players.forEach((q,i)=>q.boats.forEach((b,k)=>{if(b.zone===0&&b.cargo<4)bids.push({i,k,price:i?botBid(q):bid})}));
+let conditions=marketConditions();
+let asks=S.players.map((q,i)=>({i,price:i?botAsk(q,conditions):ask,left:q.stock})).filter(x=>x.left>0).sort((a,b)=>a.price-b.price||priority(a.i)-priority(b.i));
+let bids=[];S.players.forEach((q,i)=>q.boats.forEach((b,k)=>{if(b.zone===0&&b.cargo<4)bids.push({i,k,price:i?botBid(q,conditions):bid})}));
 bids.sort((a,b)=>b.price-a.price||priority(b.i)-priority(a.i));
 S.market={asks,bids,cursor:0,history:[]};S.phase='marketResolve';note('Peru offers revealed: '+asks.map(x=>S.players[x.i].name+' asks $'+x.price).join('; '));render()
 }
